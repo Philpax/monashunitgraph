@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Monash Unit Graph</title>
+		<script src="cytoscape.min.js"></script>
+		<script src="nodes.js"></script>
+		<style>
+			#cy {
+				height: 100%;
+				width: 100%;
+				position: absolute;
+				left: 0;
+				top: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="cy">
+		</div>
+		<script>
+			var cy = cytoscape({
+				container: document.getElementById('cy'),
+				elements: nodes,
+			  	style: cytoscape.stylesheet()
+								.selector('node')
+				 				.css({'content': function(e) 
+				 					{ 
+				 						var s = e.data('id');
+				 						var t = e.data('title');
+				 						if (t) s += "\n" + t;
+				 						return s;
+				 					}
+				 				})
+				 				.css({'shape': function(e) { return e.data("title") ? "ellipse" : "triangle" }})
+				 				.css({'text-wrap': 'wrap'})
+				 				.css({'font-size': '10pt'})
+				 				.css({'background-color': function(e)
+				 				{
+				 					var level = parseInt(e.data('id').match(/\d/)[0]);
+				 					return "hsl(" + level/5 * 360 + ", 75%, 40%)";
+				 				}})
+				 				.selector('edge')
+				 				.css({'target-arrow-shape': 'triangle'})
+				 				.css({'target-arrow-fill': 'filled'})
+				 				.css({'line-style': function(e) { return e.data("prereq") ? "solid" : "dashed"; }}),
+
+				layout: {
+					name: 'breadthfirst',
+					padding: 10,
+					spacingFactor: 5,
+					fit: false
+				},
+			});
+
+			cy.on('click', 'node', function(evt)
+			{
+				window.location.href = evt.cyTarget.data('url');
+			});
+		</script>
+	</body>
+</html>
