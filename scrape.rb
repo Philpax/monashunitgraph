@@ -2,112 +2,125 @@ require 'open-uri'
 require 'pp'
 require 'nokogiri'
 require 'json'
+require 'fileutils'
 
-year_start = 2014
-year_target = 2016
-course_code = 4650
+YearStart = 2014
+YearTarget = 2016
+CourseCode = 4650
 
-stem = 'http://www.monash.edu.au'
+Stem = 'http://www.monash.edu.au'
+UnitStartStem = "/pubs/#{YearStart}handbooks/units"
+UnitTargetStem = "/pubs/#{YearTarget}handbooks/units"
+UnitCodeRegex = /[A-Z]+[0-9]+/
 
-course_url = "#{stem}/pubs/#{year_start}handbooks/courses/4650.html"
-
-course_page = open course_url
-course_regex = /\/pubs\/#{year_start}handbooks\/units\/[A-Z0-9]+.html/
-
-unit_urls = course_page.read.scan(course_regex).uniq.map do |e| 
-	stem + e.gsub("#{year_start}handbooks", "#{year_target}handbooks")
+class JSONable
+    def to_json
+        hash = {}
+        self.instance_variables.each do |var|
+            hash[var[1..-1]] = self.instance_variable_get var
+        end
+        hash.to_json
+    end
+    def from_json! string
+        JSON.load(string).each do |var, val|
+            self.instance_variable_set "@" + var, val
+        end
+    end
 end
 
-class Unit
-	attr_reader :code
-	attr_reader :prereqs
-	attr_reader :coreqs
-	attr_reader :leads_to
+class Unit < JSONable
+	attr_accessor :code
+	attr_accessor :prereqs
+	attr_accessor :coreqs
+	attr_accessor :prohibitions
 	attr_accessor :title
 	attr_accessor :url
+	attr_accessor :faculty
+	attr_accessor :offered
+	attr_accessor :points
 
 	def initialize(code, url)
 		@code = code
 		@prereqs = []
 		@coreqs = []
-		@leads_to = []
 		@title = ""
+		@faculty = ""
 		@url = url
+		@offered = []
+		@points = 0
 	end
 
-	def add_prereq(prereq)
-		@prereqs.push prereq
-	end
+	def self.get(code)
+		url = "#{Stem}#{UnitTargetStem}/#{code}.html"
+		unit_page = Nokogiri::HTML(open(url))
 
-	def add_coreq(prereq)
-		@coreqs.push prereq
-	end
+		unit = Unit.new code, url
+		unit.title = /: (.+) - 2/.match(unit_page.css('title').first.content)[1]
 
-	def add_leads_to(lead)
-		@leads_to.push(lead)
+		unit.prereqs = unit_page.css('div.uge-prerequisites-content').inner_html.scan(/([A-Z]{3,3}[0-9]+)/).flatten.uniq
+		unit.coreqs = unit_page.css('div.uge-co-requisites-content').inner_html.scan(/([A-Z]{3,3}[0-9]+)/).flatten.uniq
+		unit.prohibitions = unit_page.css('div.uge-prohibitions-content').inner_html.scan(/([A-Z]{3,3}[0-9]+)/).flatten.uniq
+ 
+		unit.faculty = unit_page.css('p.pub_admin_faculty').first.content
+
+		offered = unit_page.css('ul.pub_highlight_value_offerings').at(0)
+		unit.offered = offered.children.map { |item| item.content } if offered
+
+		unit.points = /([0-9]+)/.match(unit_page.css('div.content h2')[0])[1].to_i
+
+		unit
 	end
+end
+
+course_url = "#{Stem}/pubs/#{YearStart}handbooks/courses/#{CourseCode}.html"
+
+course_page = open course_url
+course_regex = /#{Regexp.quote(UnitStartStem)}\/[A-Z0-9]+.html/
+
+unit_urls = course_page.read.scan(course_regex).uniq.map do |e| 
+	Stem + e.gsub("#{YearStart}handbooks", "#{YearTarget}handbooks")
 end
 
 units = {}
 
-unit_code_regex = /[A-Z]+[0-9]+/
 unit_urls.each do |url|
-	unit_code = unit_code_regex.match(url).to_s 
-	units[unit_code] = unit = Unit.new unit_code, url
+	unit_code = UnitCodeRegex.match(url).to_s 
 	begin
-		unit_page = Nokogiri::HTML(open(url))
-		unit_title = /: (.+) - 2/.match(unit_page.css('title').first.content)[1]
-		unit.title = unit_title
-		puts "#{unit_code}: #{unit_title}"
-
-		prereq_links = unit_page.css('div.uge-prerequisites-content a')
-		prereqs = prereq_links.map { |link| unit_code_regex.match(link['href']).to_s }
-		prereqs.each do |prereq|
-			units[prereq] ||= Unit.new prereq, ""
-			units[prereq].add_leads_to unit_code
-			unit.add_prereq prereq
-		end
-
-		coreq_links = unit_page.css('div.uge-co-requisites-content a')
-		coreqs = coreq_links.map { |link| unit_code_regex.match(link['href']).to_s }
-		coreqs.each do |coreq|
-			units[coreq] ||= Unit.new coreq, ""
-			units[coreq].add_leads_to unit_code
-			unit.add_coreq coreq
-		end
-
-
+		units[unit_code] = unit = Unit.get(unit_code)
+		puts "#{unit.code}: #{unit.title}"
 	rescue OpenURI::HTTPError
 		puts "#{unit_code}: Doesn't exist"
 	end
 end
 
-units.delete_if { |key, value| value.leads_to.empty? && value.prereqs.empty? && value.coreqs.empty? }
+puts "Getting additional units"
+new_units = {}
+units.each_value do |unit|
+	unit.prereqs.each do |prereq|
+		begin
+			if units[prereq].nil? && new_units[prereq].nil?
+				new_units[prereq] = unit = Unit.get(prereq)
+				puts "#{unit.code}: #{unit.title}"
+			end
+		rescue OpenURI::HTTPError
+			puts "#{prereq}: Doesn't exist"
+		end
+	end
+	unit.coreqs.each do |coreq|
+		begin
+			if units[coreq].nil? && new_units[coreq].nil?
+				new_units[coreq] = unit = Unit.get(coreq)
+				puts "#{unit.code}: #{unit.title}"
+			end
+		rescue OpenURI::HTTPError
+			puts "#{coreq}: Doesn't exist"
+		end
+	end
+end
 
-File.open("nodes.js", "w") do |file|
-	file << "nodes = {\n"
-	file << "nodes: [\n"
-	first = true
-	units.each_value do |unit|
-		file << "," unless first
-		file << "{ data: { id: \"#{unit.code}\", title: \"#{unit.title}\", url: \"#{unit.url}\" } }\n"
-		first = false
-	end
-	file << "],\n"
-	file << "edges: [\n"
-	first = true
-	units.each_value do |unit|
-		unit.prereqs.each do |code|
-			file << "," unless first
-			file << "{ data: { source: \"#{code}\", target: \"#{unit.code}\", prereq: true } }\n"
-			first = false
-		end
-		unit.coreqs.each do |code|
-			file << "," unless first
-			file << "{ data: { \"source\": \"#{code}\", target: \"#{unit.code}\", coreq: true } }\n"
-			first = false
-		end
-	end
-	file << "]\n"
-	file << "}\n"
+units.merge! new_units
+
+FileUtils.mkdir_p 'units'
+units.each do |key, value|
+	File.write(File.join('units', key + '.json'), value.to_json.to_s)
 end
