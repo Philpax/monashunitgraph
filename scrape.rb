@@ -13,22 +13,7 @@ UnitStartStem = "/pubs/#{YearStart}handbooks/units"
 UnitTargetStem = "/pubs/#{YearTarget}handbooks/units"
 UnitCodeRegex = /[A-Z]+[0-9]+/
 
-class JSONable
-    def to_json
-        hash = {}
-        self.instance_variables.each do |var|
-            hash[var[1..-1]] = self.instance_variable_get var
-        end
-        hash.to_json
-    end
-    def from_json! string
-        JSON.load(string).each do |var, val|
-            self.instance_variable_set "@" + var, val
-        end
-    end
-end
-
-class Unit < JSONable
+class Unit
 	attr_accessor :code
 	attr_accessor :prereqs
 	attr_accessor :coreqs
@@ -70,6 +55,20 @@ class Unit < JSONable
 
 		unit
 	end
+
+    def to_json
+        hash = {}
+        self.instance_variables.each do |var|
+            hash[var[1..-1]] = self.instance_variable_get var
+        end
+        hash.to_json
+    end
+
+    def from_json! string
+        JSON.load(string).each do |var, val|
+            self.instance_variable_set "@" + var, val
+        end
+    end
 end
 
 course_url = "#{Stem}/pubs/#{YearStart}handbooks/courses/#{CourseCode}.html"
