@@ -26,6 +26,7 @@ class Unit
 	attr_accessor :offered
 	attr_accessor :points
 	attr_accessor :description
+	attr_accessor :areas
 
 	def initialize(code, url)
 		@code = code
@@ -37,6 +38,7 @@ class Unit
 		@offered = []
 		@points = 0
 		@description = ""
+		@areas = []
 	end
 
 	UnitCodeRegex = /([A-Z]{3,3}[0-9]+)/
@@ -71,6 +73,8 @@ class Unit
 		unit.points = /([0-9]+)/.match(unit_page.css('div.content h2')[0])[1].to_i
 
 		unit.description = unit_page.css('div.uge-synopsis-content p').first.content.strip
+
+		unit.areas = unit_page.css('div.uge-this-unit-applies-to-the-following-areas-of-study-content a').map { |e| e.text }
 
 		unit
 	end
