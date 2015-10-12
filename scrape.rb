@@ -61,6 +61,13 @@ class Unit
 			unit.offered = offered.map { |e| e.next_sibling.text.strip }
 		end
 
+		unit.offered.map! do |e| 
+			s = e.gsub(/ [0-9]{4,4}.*/, '')
+			s.gsub! "First semester", "Semester one"
+			s.gsub! "Second semester", "Semester two"
+			s
+		end
+
 		unit.points = /([0-9]+)/.match(unit_page.css('div.content h2')[0])[1].to_i
 
 		unit.description = unit_page.css('div.uge-synopsis-content p').first.content.strip
